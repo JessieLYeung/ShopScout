@@ -39,8 +39,8 @@ def create_app():
 
         try:
             latitude, longitude = geocode_location(location)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 404
+        except ValueError:
+            return jsonify({"error": "location could not be geocoded"}), 404
 
         results = search_item_prices(
             app.config["DATABASE"], latitude, longitude, item=item
@@ -206,4 +206,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug_mode = os.getenv("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(debug=debug_mode)
