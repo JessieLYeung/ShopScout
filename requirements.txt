@@ -1,4 +1,5 @@
 Flask>=3.0,<4.0
+apify-client>=3.5,<4.0
 certifi==2026.10.23
 charset-normalizer==3.5.2
 idna==3.20

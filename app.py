@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, jsonify, request
 from geolocation import get_coordinates
 from stores import find_nearby_stores
@@ -19,6 +21,11 @@ def search():
             {"error": "ZIP code and product are required"}
         ), 400
 
+    if not os.getenv("GEOAPIFY_KEY"):
+        return jsonify(
+            {"error": "Search is not configured. Set GEOAPIFY_KEY in your .env file."}
+        ), 503
+
     coordinates = get_coordinates(zip_code)
     if coordinates is None:
         return jsonify(
@@ -30,41 +37,33 @@ def search():
         return jsonify(
             {"error": "Unable to retrieve nearby stores"}
         ), 502
-    if not nearby_stores:
-        return jsonify({
-            "location": zip_code,
-            "coordinates": coordinates,
-            "nearby_stores": [],
-            "product_name": product_name,
-            "products": {
-                "volume": [],
-                "weight": [],
-                "count": []
-        }
-        }), 200
+    grouped_products = {"volume": [], "weight": [], "count": []}
+    if nearby_stores:
+        products = find_products(product_name, zip_code, nearby_stores)
+        if products is None:
+            if not os.getenv("APIFY_TOKEN"):
+                return jsonify(
+                    {"error": "Product search is not configured. Set APIFY_TOKEN in your .env file."}
+                ), 503
+            return jsonify(
+                {"error": "Unable to retrieve products"}
+            ), 502
 
-    products = find_products(product_name, zip_code, nearby_stores)
-    if products is None:
-        return jsonify(
-            {"error": "Unable to retrieve products"}
-        ), 502
+        filtered_products = filter_products(products, product_name)
+        compared_products = compare_products(filtered_products)
+        grouped_products = group_products_by_type(compared_products)
 
-    if not products:
-        return jsonify(
-            {"products": [], "message": "No matching products found"}, 200
-        )
-
-    filtered_products = filter_products(products, product_name)
-    compared_products = compare_products(filtered_products)
-    grouped_products = group_products_by_type(compared_products)
-
-    return jsonify({
+    response = {
         "location": zip_code,
         "product_name": product_name,
         "coordinates": coordinates,
         "nearby_stores": nearby_stores,
         "products": grouped_products
-    })
+    }
+    if not any(grouped_products.values()):
+        response["message"] = "No matching products found"
+
+    return jsonify(response)
 
 if __name__ == "__main__":
     app.run(debug=True)

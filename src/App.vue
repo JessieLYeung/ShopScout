@@ -1,13 +1,26 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const product = ref('')
 const location = ref('')
 const loading = ref(false)
 const error = ref('')
 const stores = ref(null)
+const productGroups = ref(null)
 const searchedProduct = ref('')
 const searchedLocation = ref('')
+
+const productTypes = [
+  { key: 'volume', label: 'Volume', unit: 'fl oz' },
+  { key: 'weight', label: 'Weight', unit: 'oz' },
+  { key: 'count', label: 'Count', unit: 'item' },
+]
+
+const products = computed(() =>
+  productGroups.value
+    ? productTypes.flatMap(({ key }) => productGroups.value[key])
+    : [],
+)
 
 async function searchStores() {
   const requestedProduct = product.value.trim()
@@ -20,14 +33,15 @@ async function searchStores() {
 
   error.value = ''
   stores.value = null
+  productGroups.value = null
   searchedProduct.value = requestedProduct
   searchedLocation.value = requestedLocation
   loading.value = true
 
   try {
     const query = new URLSearchParams({
-      q: requestedLocation,
-      p: requestedProduct,
+      zip: requestedLocation,
+      product: requestedProduct,
     })
     const response = await fetch(`/search?${query}`)
     let data
@@ -50,15 +64,44 @@ async function searchStores() {
       return
     }
 
-    if (!Array.isArray(data['nearby stores'])) {
+    if (!Array.isArray(data.nearby_stores)) {
       error.value = 'The search service returned an unexpected response.'
       return
     }
 
-    stores.value = data['nearby stores'].filter(
+    const responseProducts = data.products
+    if (
+      !Array.isArray(responseProducts) &&
+      (!responseProducts ||
+        typeof responseProducts !== 'object' ||
+        !productTypes.every(({ key }) => Array.isArray(responseProducts[key])))
+    ) {
+      error.value = 'The search service returned an unexpected response.'
+      return
+    }
+
+    stores.value = data.nearby_stores.filter(
       (store) =>
         typeof store?.name === 'string' &&
         typeof store?.address === 'string',
+    )
+    productGroups.value = Object.fromEntries(
+      productTypes.map(({ key }) => {
+        const categoryProducts = Array.isArray(responseProducts)
+          ? []
+          : responseProducts[key]
+        return [
+          key,
+          categoryProducts.filter(
+            (item) =>
+              typeof item?.name === 'string' &&
+              typeof item?.retailer === 'string' &&
+              Number.isFinite(item?.price) &&
+              typeof item?.size === 'string' &&
+              Number.isFinite(item?.unit_price),
+          ),
+        ]
+      }),
     )
   } catch (requestError) {
     console.error('Store search request failed:', requestError)
@@ -100,8 +143,8 @@ async function searchStores() {
         <p class="eyebrow">A LITTLE CLOSER TO YOUR NEXT SHOP</p>
         <h1>Find a store<br />near <span>you.</span></h1>
         <p class="intro">
-          Tell us what you need and where to look. We’ll find nearby
-          supermarkets for your next shopping trip.
+          Tell us what you need and your ZIP code. We’ll compare prices at
+          nearby supported supermarkets.
         </p>
 
         <form class="search-panel" @submit.prevent="searchStores">
@@ -157,7 +200,7 @@ async function searchStores() {
                 v-model="location"
                 type="text"
                 name="location"
-                placeholder="City, neighborhood, or ZIP"
+                placeholder="e.g. 32801"
                 autocomplete="postal-code"
                 required
               />
@@ -185,20 +228,19 @@ async function searchStores() {
                 stroke-linecap="round"
               />
             </svg>
-            <span>{{ loading ? 'Searching...' : 'Find stores' }}</span>
+            <span>{{ loading ? 'Searching...' : 'Compare prices' }}</span>
           </button>
         </form>
 
         <p class="search-note">
-          Store locations only for now — product availability and prices aren’t
-          included.
+          Price comparisons are available for supported nearby retailers.
         </p>
       </section>
 
       <section class="results" aria-live="polite">
         <div v-if="loading" class="message-card">
           <span class="spinner" aria-hidden="true"></span>
-          <p>Looking for nearby supermarkets...</p>
+          <p>Finding nearby stores and comparing prices...</p>
         </div>
 
         <div v-else-if="error" class="message-card error-card" role="alert">
@@ -213,15 +255,54 @@ async function searchStores() {
           <div class="results-heading">
             <div>
               <p class="eyebrow">YOUR SEARCH</p>
-              <h2>Stores near {{ searchedLocation }}</h2>
+              <h2>Results near {{ searchedLocation }}</h2>
               <p class="results-query">For “{{ searchedProduct }}”</p>
             </div>
-            <span v-if="stores.length" class="result-count">
-              {{ stores.length }} {{ stores.length === 1 ? 'store' : 'stores' }}
+            <span v-if="products.length" class="result-count">
+              {{ products.length }}
+              {{ products.length === 1 ? 'comparison' : 'comparisons' }}
             </span>
           </div>
 
-          <div v-if="stores.length === 0" class="message-card empty-card">
+          <section class="product-results" aria-label="Product price comparisons">
+            <h2>Price comparisons</h2>
+            <div v-if="products.length === 0" class="message-card empty-card">
+              <span class="message-icon" aria-hidden="true">?</span>
+              <div>
+                <h3>No matching products found</h3>
+                <p>Try another item or ZIP code.</p>
+              </div>
+            </div>
+
+            <div
+              v-for="type in productTypes"
+              v-show="productGroups[type.key].length"
+              :key="type.key"
+              class="product-group"
+            >
+              <h3>{{ type.label }} comparison</h3>
+              <ul class="product-list">
+                <li
+                  v-for="(item, index) in productGroups[type.key]"
+                  :key="`${item.retailer}-${item.name}-${item.size}-${index}`"
+                  class="product-card"
+                >
+                  <div class="product-details">
+                    <h4>{{ item.name }}</h4>
+                    <p>{{ item.retailer }} · {{ item.size }}</p>
+                  </div>
+                  <div class="product-prices">
+                    <strong>${{ item.price.toFixed(2) }}</strong>
+                    <span>${{ item.unit_price.toFixed(4) }} / {{ type.unit }}</span>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="nearby-results" aria-label="Nearby supermarkets">
+            <h2>Nearby supermarkets</h2>
+            <div v-if="stores.length === 0" class="message-card empty-card">
             <span class="message-icon" aria-hidden="true">?</span>
             <div>
               <h2>No nearby supermarkets found</h2>
@@ -229,33 +310,38 @@ async function searchStores() {
             </div>
           </div>
 
-          <ul v-else class="store-list">
-            <li v-for="(store, index) in stores" :key="`${store.name}-${store.address}`" class="store-card">
-              <span class="store-number">{{ String(index + 1).padStart(2, '0') }}</span>
-              <div class="store-details">
-                <h3>{{ store.name }}</h3>
-                <p>{{ store.address }}</p>
-              </div>
-              <a
-                class="directions-link"
-                :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`"
-                target="_blank"
-                rel="noopener noreferrer"
-                :aria-label="`Get directions to ${store.name}`"
+            <ul v-else class="store-list">
+              <li
+                v-for="(store, index) in stores"
+                :key="`${store.name}-${store.address}`"
+                class="store-card"
               >
-                Directions
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path
-                    d="M4 10h11m0 0-4-4m4 4-4 4"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </a>
-            </li>
-          </ul>
+                <span class="store-number">{{ String(index + 1).padStart(2, '0') }}</span>
+                <div class="store-details">
+                  <h3>{{ store.name }}</h3>
+                  <p>{{ store.address }}</p>
+                </div>
+                <a
+                  class="directions-link"
+                  :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="`Get directions to ${store.name}`"
+                >
+                  Directions
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 10h11m0 0-4-4m4 4-4 4"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </a>
+              </li>
+            </ul>
+          </section>
         </template>
 
         <div v-else class="empty-state">

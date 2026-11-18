@@ -2,6 +2,16 @@ from unittest.mock import patch
 from app import app
 
 client = app.test_client()
+
+
+def search(path):
+    with patch.dict(
+        "os.environ",
+        {"GEOAPIFY_KEY": "test-key", "APIFY_TOKEN": "test-token"}
+    ):
+        return client.get(path)
+
+
 response = client.get("/search")
 
 print("Status code:", response.status_code)
@@ -32,7 +42,7 @@ with patch("app.get_coordinates") as mock_coordinates, \
         }
     ]
 
-    response = client.get("/search?zip=32801&product=milk")
+    response = search("/search?zip=32801&product=milk")
 
     print("Status code:", response.status_code)
     print("Response:", response.json)
@@ -49,7 +59,7 @@ with patch("app.get_coordinates") as mock_coordinates:
 
     mock_coordinates.return_value = None
 
-    response = client.get("/search?zip=00000&product=milk")
+    response = search("/search?zip=00000&product=milk")
 
     print("Status code:", response.status_code)
     print("Response:", response.json)
@@ -69,7 +79,7 @@ with patch("app.get_coordinates") as mock_coordinates, \
 
     mock_stores.return_value = None
 
-    response = client.get("/search?zip=32801&product=milk")
+    response = search("/search?zip=32801&product=milk")
 
     print("Status code:", response.status_code)
     print("Response:", response.json)
@@ -97,7 +107,7 @@ with patch("app.get_coordinates") as mock_coordinates, \
 
     mock_products.return_value = None
 
-    response = client.get("/search?zip=32801&product=milk")
+    response = search("/search?zip=32801&product=milk")
 
     print("Status code:", response.status_code)
     print("Response:", response.json)
@@ -118,7 +128,7 @@ with patch("app.get_coordinates") as mock_coordinates, \
 
     mock_stores.return_value = []
 
-    response = client.get("/search?zip=32801&product=milk")
+    response = search("/search?zip=32801&product=milk")
 
     assert response.status_code == 200
     assert response.json["nearby_stores"] == []
@@ -127,7 +137,33 @@ with patch("app.get_coordinates") as mock_coordinates, \
         "weight": [],
         "count": []
     }
+    assert response.json["location"] == "32801"
+    assert response.json["product_name"] == "milk"
 
     mock_products.assert_not_called()
 
     print("Empty stores test passed!")
+
+with patch.dict("os.environ", {}, clear=True):
+    response = client.get("/search?zip=32801&product=milk")
+
+    assert response.status_code == 503
+    assert "GEOAPIFY_KEY" in response.json["error"]
+
+    print("Missing API key test passed!")
+
+with patch.dict("os.environ", {"GEOAPIFY_KEY": "test-key"}, clear=True), \
+     patch("app.get_coordinates") as mock_coordinates, \
+     patch("app.find_nearby_stores") as mock_stores, \
+     patch("app.find_products") as mock_products:
+
+    mock_coordinates.return_value = {"lat": 28.54, "lon": -81.38}
+    mock_stores.return_value = [{"name": "Publix", "address": "Example address"}]
+    mock_products.return_value = None
+
+    response = client.get("/search?zip=32801&product=milk")
+
+    assert response.status_code == 503
+    assert "APIFY_TOKEN" in response.json["error"]
+
+    print("Missing Apify token test passed!")
