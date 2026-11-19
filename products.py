@@ -6,8 +6,6 @@ from stores_database import save_store
 
 load_dotenv()
 
-APIFY_TOKEN = os.getenv("APIFY_TOKEN")
-
 def find_products(product_name, postal_code, nearby_stores):
     supported_retailers = {
         "publix": "Publix",
@@ -39,8 +37,11 @@ def find_products(product_name, postal_code, nearby_stores):
         print("No supported retailers found.")
         return []
 
-    apify_client = ApifyClient(APIFY_TOKEN)
+    apify_token = os.getenv("APIFY_TOKEN")
+    if not apify_token:
+        return None
 
+    apify_client = ApifyClient(apify_token)
     actor_client = apify_client.actor(
         "abotapi/instacart-grocery-price-scraper"
     )
