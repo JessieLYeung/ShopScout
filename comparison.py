@@ -86,6 +86,14 @@ def compare_products(products):
         if normalized is None:
             continue
 
+        # Milk sizes listed in oz represent fluid ounces, not weight.
+        if (
+            normalized["measurement_type"] == "weight"
+            and "milk" in product.get("name", "").lower()
+            and size.lower().strip().endswith("oz")
+        ):
+            normalized["measurement_type"] = "volume"
+
         quantity = normalized["quantity"]
 
         if quantity <= 0:

@@ -3,6 +3,7 @@ from geolocation import get_coordinates
 from stores import find_nearby_stores
 from products import find_products
 from comparison import filter_products, compare_products, group_products_by_type
+from stores_database import save_nearby_stores
 
 app = Flask(__name__)
 
@@ -42,6 +43,7 @@ def search():
                 "count": []
         }
         }), 200
+    store_ids = save_nearby_stores(nearby_stores)
 
     products = find_products(product_name, zip_code, nearby_stores)
     if products is None:
