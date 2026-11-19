@@ -12,158 +12,147 @@ def search(path):
         return client.get(path)
 
 
-response = client.get("/search")
+def test_search_endpoint():
+    # Successful search
+    with patch("app.get_coordinates") as mock_coordinates, \
+        patch("app.find_nearby_stores") as mock_stores, \
+        patch("app.find_products") as mock_products:
 
-print("Status code:", response.status_code)
-print("Response:", response.json)
-
-with patch("app.get_coordinates") as mock_coordinates, \
-     patch("app.find_nearby_stores") as mock_stores, \
-     patch("app.find_products") as mock_products:
-
-    mock_coordinates.return_value = {
-        "lat": 28.54,
-        "lon": -81.38
-    }
-
-    mock_stores.return_value = [
-        {
-            "name": "Publix",
-            "address": "Example Publix Address"
+        mock_coordinates.return_value = {
+            "lat": 28.54,
+            "lon": -81.38
         }
-    ]
 
-    mock_products.return_value = [
-        {
-            "name": "Whole Milk",
-            "price": 4.99,
-            "size": "1 gal",
-            "retailerName": "Publix"
+        mock_stores.return_value = [
+            {
+                "name": "Publix",
+                "address": "Example Publix Address",
+                "latitude": 28.54,
+                "longitude": -81.38
+            }
+        ]
+
+        mock_products.return_value = [
+            {
+                "name": "Whole Milk",
+                "price": 4.99,
+                "size": "1 gal",
+                "retailerName": "Publix"
+            }
+        ]
+
+        response = search("/search?zip=32801&product=milk")
+
+        assert response.status_code == 200
+        assert response.json["location"] == "32801"
+        assert response.json["product_name"] == "milk"
+        assert len(response.json["products"]["volume"]) == 1
+        assert response.json["products"]["volume"][0]["retailer"] == "Publix"
+
+    # Invalid location
+    with patch("app.get_coordinates") as mock_coordinates:
+        mock_coordinates.return_value = None
+
+        response = search("/search?zip=00000&product=milk")
+
+        assert response.status_code == 400
+        assert response.json["error"] == "Unable to find the specified location"
+
+    # Store API failure
+    with patch("app.get_coordinates") as mock_coordinates, \
+        patch("app.find_nearby_stores") as mock_stores:
+
+        mock_coordinates.return_value = {
+            "lat": 28.54,
+            "lon": -81.38
         }
-    ]
+        mock_stores.return_value = None
 
-    response = search("/search?zip=32801&product=milk")
+        response = search("/search?zip=32801&product=milk")
 
-    print("Status code:", response.status_code)
-    print("Response:", response.json)
+        assert response.status_code == 502
+        assert response.json["error"] == "Unable to retrieve nearby stores"
 
-    assert response.status_code == 200
-    assert response.json["location"] == "32801"
-    assert response.json["product_name"] == "milk"
-    assert len(response.json["products"]["volume"]) == 1
-    assert response.json["products"]["volume"][0]["retailer"] == "Publix"
+    # Product API failure
+    with patch("app.get_coordinates") as mock_coordinates, \
+        patch("app.find_nearby_stores") as mock_stores, \
+        patch("app.find_products") as mock_products:
 
-    print("All assertions passed!")
-
-with patch("app.get_coordinates") as mock_coordinates:
-
-    mock_coordinates.return_value = None
-
-    response = search("/search?zip=00000&product=milk")
-
-    print("Status code:", response.status_code)
-    print("Response:", response.json)
-
-    assert response.status_code == 400
-    assert response.json["error"] == "Unable to find the specified location"
-
-    print("Invalid location test passed!")
-
-with patch("app.get_coordinates") as mock_coordinates, \
-     patch("app.find_nearby_stores") as mock_stores:
-
-    mock_coordinates.return_value = {
-        "lat": 28.54,
-        "lon": -81.38
-    }
-
-    mock_stores.return_value = None
-
-    response = search("/search?zip=32801&product=milk")
-
-    print("Status code:", response.status_code)
-    print("Response:", response.json)
-
-    assert response.status_code == 502
-    assert response.json["error"] == "Unable to retrieve nearby stores"
-
-    print("Store API failure test passed!")
-
-with patch("app.get_coordinates") as mock_coordinates, \
-     patch("app.find_nearby_stores") as mock_stores, \
-     patch("app.find_products") as mock_products:
-
-    mock_coordinates.return_value = {
-        "lat": 28.54,
-        "lon": -81.38
-    }
-
-    mock_stores.return_value = [
-        {
-            "name": "Publix",
-            "address": "Example Publix Address"
+        mock_coordinates.return_value = {
+            "lat": 28.54,
+            "lon": -81.38
         }
-    ]
 
-    mock_products.return_value = None
+        mock_stores.return_value = [
+            {
+                "name": "Publix",
+                "address": "Example Publix Address",
+                "latitude": 28.54,
+                "longitude": -81.38
+            }
+        ]
 
-    response = search("/search?zip=32801&product=milk")
+        mock_products.return_value = None
 
-    print("Status code:", response.status_code)
-    print("Response:", response.json)
+        response = search("/search?zip=32801&product=milk")
 
-    assert response.status_code == 502
-    assert response.json["error"] == "Unable to retrieve products"
+        assert response.status_code == 502
+        assert response.json["error"] == "Unable to retrieve products"
 
-    print("Product API failure test passed!")
+    # No nearby stores
+    with patch("app.get_coordinates") as mock_coordinates, \
+        patch("app.find_nearby_stores") as mock_stores, \
+        patch("app.find_products") as mock_products:
 
-with patch("app.get_coordinates") as mock_coordinates, \
-     patch("app.find_nearby_stores") as mock_stores, \
-     patch("app.find_products") as mock_products:
+        mock_coordinates.return_value = {
+            "lat": 28.54,
+            "lon": -81.38
+        }
 
-    mock_coordinates.return_value = {
-        "lat": 28.54,
-        "lon": -81.38
-    }
+        mock_stores.return_value = []
 
-    mock_stores.return_value = []
+        response = search("/search?zip=32801&product=milk")
 
-    response = search("/search?zip=32801&product=milk")
+        assert response.status_code == 200
+        assert response.json["nearby_stores"] == []
+        assert response.json["products"] == {
+            "volume": [],
+            "weight": [],
+            "count": []
+        }
+        assert response.json["location"] == "32801"
+        assert response.json["product_name"] == "milk"
 
-    assert response.status_code == 200
-    assert response.json["nearby_stores"] == []
-    assert response.json["products"] == {
-        "volume": [],
-        "weight": [],
-        "count": []
-    }
-    assert response.json["location"] == "32801"
-    assert response.json["product_name"] == "milk"
+        mock_products.assert_not_called()
 
-    mock_products.assert_not_called()
+    # Missing Geoapify API key
+    with patch.dict("os.environ", {}, clear=True):
+        response = client.get("/search?zip=32801&product=milk")
 
-    print("Empty stores test passed!")
+        assert response.status_code == 503
+        assert "GEOAPIFY_KEY" in response.json["error"]
 
-with patch.dict("os.environ", {}, clear=True):
-    response = client.get("/search?zip=32801&product=milk")
+    # Missing Apify API token
+    with patch.dict(
+        "os.environ",
+        {"GEOAPIFY_KEY": "test-key"},
+        clear=True
+    ), patch("app.get_coordinates") as mock_coordinates, \
+       patch("app.find_nearby_stores") as mock_stores:
 
-    assert response.status_code == 503
-    assert "GEOAPIFY_KEY" in response.json["error"]
+        mock_coordinates.return_value = {
+            "lat": 28.54,
+            "lon": -81.38
+        }
 
-    print("Missing API key test passed!")
+        mock_stores.return_value = [
+            {
+                "name": "Publix",
+                "address": "Example address"
+            }
+        ]
 
-with patch.dict("os.environ", {"GEOAPIFY_KEY": "test-key"}, clear=True), \
-     patch("app.get_coordinates") as mock_coordinates, \
-     patch("app.find_nearby_stores") as mock_stores, \
-     patch("app.find_products") as mock_products:
+        response = client.get("/search?zip=32801&product=milk")
 
-    mock_coordinates.return_value = {"lat": 28.54, "lon": -81.38}
-    mock_stores.return_value = [{"name": "Publix", "address": "Example address"}]
-    mock_products.return_value = None
-
-    response = client.get("/search?zip=32801&product=milk")
-
-    assert response.status_code == 503
-    assert "APIFY_TOKEN" in response.json["error"]
-
-    print("Missing Apify token test passed!")
+        assert response.status_code == 503
+        assert "APIFY_TOKEN" in response.json["error"]

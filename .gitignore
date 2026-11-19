@@ -1,7 +1,9 @@
+# Environment variables
 .env
 
-# Virtual environment
+# Virtual environments and dependencies
 .venv/
+node_modules/
 
 # Python cache files
 __pycache__/

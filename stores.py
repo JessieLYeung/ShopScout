@@ -42,9 +42,16 @@ def find_nearby_stores(coordinates):
         store_address = properties.get("formatted")
         
         if store_name and store_address:
-            store_info = {}
-            store_info["name"] = store_name
-            store_info["address"] = store_address
-            nearby_store.append(store_info)
+            coordinates = store.get("geometry", {}).get("coordinates", [])
+
+            if len(coordinates) >= 2:
+                store_info = {
+                    "name": store_name,
+                    "address": store_address,
+                    "longitude": coordinates[0],
+                    "latitude": coordinates[1]
+                }
+
+                nearby_store.append(store_info)
 
     return nearby_store
