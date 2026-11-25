@@ -43,7 +43,19 @@ npm run dev
 Vite proxies `/search` requests to the Flask server at `http://127.0.0.1:5000`.
 Open the local URL printed by Vite to use the app. Product price searches
 currently support Publix, Aldi, and Sprouts when returned by the nearby-store
-search.
+search. Search radius can be set to 5, 10, or 25 km. The Flask app creates the
+SQLite tables automatically when it starts.
+
+Product comparisons are grouped by the product description after removing the
+brand and retailer, so variants such as whole and almond milk are not ranked
+together. A price is shown only when its retailer and store can be matched to a
+nearby store. Availability and update time come from the product search result;
+they may change at the retailer.
+
+Search results use a bounded, in-memory cache: geocoding results for 24 hours,
+nearby stores for 6 hours, and product results for 5 minutes. Cache entries are
+cleared when the Flask process restarts. The Flask log reports the elapsed time
+for geocoding, nearby-store lookup, product search, and the complete request.
 
 ## Production build
 

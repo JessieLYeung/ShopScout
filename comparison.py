@@ -1,4 +1,5 @@
 
+import math
 import re
 
 # Convert supported units into a common measurement.
@@ -71,6 +72,37 @@ def calculate_unit_price(price, quantity):
     return price / quantity
 
 
+def _comparison_group(product):
+    name = str(product.get("name") or "")
+    descriptor = name
+
+    terms_to_remove = [
+        product.get("brand"),
+        product.get("retailerName"),
+        product.get("size"),
+        "Publix",
+        "Aldi",
+        "Sprouts Farmers Market",
+        "Sprouts",
+    ]
+
+    for term in terms_to_remove:
+        if term:
+            descriptor = re.sub(
+                rf"\b{re.escape(str(term))}\b",
+                " ",
+                descriptor,
+                flags=re.IGNORECASE,
+            )
+
+    descriptor = re.sub(r"[^a-zA-Z0-9]+", " ", descriptor).strip()
+    descriptor = re.sub(r"\s+", " ", descriptor)
+    if not descriptor:
+        descriptor = name.strip()
+
+    return descriptor.casefold(), descriptor
+
+
 def compare_products(products):
     compared_products = []
 
@@ -79,6 +111,14 @@ def compare_products(products):
         price = product.get("price")
 
         if not size or price is None:
+            continue
+
+        try:
+            price = float(price)
+        except (TypeError, ValueError):
+            continue
+
+        if not math.isfinite(price) or price < 0:
             continue
 
         normalized = normalize_size(size)
@@ -100,14 +140,24 @@ def compare_products(products):
             continue
 
         unit_price = calculate_unit_price(price, quantity)
+        comparison_key, comparison_label = _comparison_group(product)
 
         compared_products.append({
             "name": product.get("name"),
+            "brand": product.get("brand"),
             "retailer": product.get("retailerName"),
             "price": price,
             "size": size,
             "measurement_type": normalized["measurement_type"],
-            "unit_price": round(unit_price, 4)
+            "unit_price": round(unit_price, 4),
+            "comparison_key": comparison_key,
+            "comparison_group": comparison_label,
+            "store_name": product.get("store_name"),
+            "store_address": product.get("store_address"),
+            "store_distance_km": product.get("store_distance_km"),
+            "availability": product.get("availability", "unknown"),
+            "product_url": product.get("product_url"),
+            "last_updated": product.get("last_updated"),
         })
 
     return sorted(
@@ -116,13 +166,14 @@ def compare_products(products):
     )
 
 def filter_products(products, search_query):
-    keywords = search_query.lower().split()
+    keywords = re.findall(r"[a-z0-9]+", search_query.casefold())
     filtered_products = []
 
     for product in products:
-        name = product.get("name", "").lower()
+        name = str(product.get("name") or "").casefold()
+        name_words = set(re.findall(r"[a-z0-9]+", name))
 
-        if all(keyword in name for keyword in keywords):
+        if all(keyword in name_words for keyword in keywords):
             filtered_products.append(product)
 
     return filtered_products

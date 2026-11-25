@@ -1,127 +1,94 @@
-from comparison import parse_size, normalize_size, compare_products, group_products_by_type, filter_products
+from comparison import (
+    compare_products,
+    filter_products,
+    group_products_by_type,
+    normalize_size,
+    parse_size,
+)
 
-# Test parsing
-print(parse_size("128 fl oz"))
-print(parse_size("0.5 gal"))
-print(parse_size("12 ct"))
 
-# Test normalization
-print(normalize_size("1 gal"))
-print(normalize_size("2 lb"))
-print(normalize_size("12 ct"))
-
-# Test product comparisons
-products = [
-    {
-        "name": "Publix Whole Milk",
-        "retailerName": "Publix",
-        "price": 4.41,
-        "size": "1 gal"
-    },
-    {
-        "name": "Friendly Farms Whole Milk",
-        "retailerName": "ALDI",
-        "price": 2.97,
-        "size": "1 gal"
-    },
-    {
-        "name": "Friendly Farms Whole Milk",
-        "retailerName": "ALDI",
-        "price": 1.95,
-        "size": "0.5 gal"
+def test_size_parsing_and_normalization():
+    assert parse_size("12 ct") == {"amount": 12.0, "unit": "ct"}
+    assert normalize_size("1 gal") == {
+        "measurement_type": "volume",
+        "quantity": 128,
     }
-]
 
-results = compare_products(products)
 
-for product in results:
-    print(product)
-
+def test_comparison_groups_keep_product_variants_separate():
     products = [
-    {"name": "Publix Whole Milk"},
-    {"name": "Friendly Farms Whole Milk"},
-    {"name": "Sprouts Organic Whole Milk"},
-    {"name": "Publix 2% Reduced Fat Milk"},
-    {"name": "Almond Milk"}
-]
+        {
+            "name": "Publix Whole Milk",
+            "brand": None,
+            "retailerName": "Publix",
+            "price": 4.41,
+            "size": "1 gal",
+        },
+        {
+            "name": "Friendly Farms Whole Milk",
+            "brand": "Friendly Farms",
+            "retailerName": "ALDI",
+            "price": 2.97,
+            "size": "1 gal",
+        },
+        {
+            "name": "Friendly Farms Almond Milk",
+            "brand": "Friendly Farms",
+            "retailerName": "ALDI",
+            "price": 2.50,
+            "size": "1 gal",
+        },
+    ]
 
-filtered = filter_products(products, "whole milk")
+    compared = compare_products(products)
 
-for product in filtered:
-    print(product["name"])
+    assert [item["comparison_group"] for item in compared] == [
+        "Almond Milk",
+        "Whole Milk",
+        "Whole Milk",
+    ]
+    assert compared[1]["comparison_key"] == compared[2]["comparison_key"]
 
-assert len(filtered) == 3
 
-print("Product filtering test passed!")
+def test_filter_uses_whole_words_and_comparison_rejects_bad_prices():
+    products = [
+        {"name": "Ham"},
+        {"name": "Hamburger Buns"},
+        {"name": "Milk", "price": float("nan"), "size": "1 gal"},
+        {"name": "Milk", "price": -1, "size": "1 gal"},
+    ]
 
-products = [
-    {
-        "name": "Publix Whole Milk",
-        "retailerName": "Publix",
-        "price": 4.41,
-        "size": "1 gal"
-    },
-    {
-        "name": "Friendly Farms Whole Milk",
-        "retailerName": "ALDI",
-        "price": 2.97,
-        "size": "1 gal"
-    },
-    {
-        "name": "Publix 2% Reduced Fat Milk",
-        "retailerName": "Publix",
-        "price": 4.41,
-        "size": "1 gal"
-    },
-    {
-        "name": "Sprouts Whole Milk",
-        "retailerName": "Sprouts",
-        "price": 2.99,
-        "size": "0.5 gal"
-    }
-]
+    assert filter_products(products, "ham") == [{"name": "Ham"}]
+    assert compare_products(products[2:]) == []
 
-filtered = filter_products(products, "whole milk")
-compared = compare_products(filtered)
 
-for product in compared:
-    print(product["name"], product["retailer"], product["unit_price"])
-
-assert len(compared) == 3
-assert compared[0]["retailer"] == "ALDI"
-
-print("Filtering and comparison test passed!")
-
-products = [
-    {
+def test_comparison_preserves_store_and_price_freshness_details():
+    result = compare_products([{
         "name": "Whole Milk",
-        "measurement_type": "volume",
-        "unit_price": 0.03
-    },
-    {
-        "name": "Chicken Breast",
-        "measurement_type": "weight",
-        "unit_price": 0.25
-    },
-    {
-        "name": "Eggs",
-        "measurement_type": "count",
-        "unit_price": 0.30
-    },
-    {
-        "name": "Orange Juice",
-        "measurement_type": "volume",
-        "unit_price": 0.05
-    }
-]
+        "retailerName": "Publix",
+        "price": 4.25,
+        "size": "1 gal",
+        "store_name": "Publix",
+        "store_address": "123 Main St",
+        "store_distance_km": 0.6,
+        "availability": "unknown",
+        "product_url": "https://example.com/milk",
+        "last_updated": "2026-11-25 12:00:00",
+    }])
 
-groups = group_products_by_type(products)
+    assert result[0]["store_address"] == "123 Main St"
+    assert result[0]["store_distance_km"] == 0.6
+    assert result[0]["availability"] == "unknown"
+    assert result[0]["product_url"] == "https://example.com/milk"
+    assert result[0]["last_updated"] == "2026-11-25 12:00:00"
 
-for measurement_type, items in groups.items():
-    print(measurement_type, ":", len(items), "products")
 
-assert len(groups["volume"]) == 2
-assert len(groups["weight"]) == 1
-assert len(groups["count"]) == 1
+def test_group_products_by_measurement_type():
+    grouped = group_products_by_type([
+        {"measurement_type": "volume"},
+        {"measurement_type": "count"},
+    ])
 
-print("Product grouping test passed!")
+    assert len(grouped["volume"]) == 1
+    assert len(grouped["count"]) == 1
+    assert grouped["weight"] == []

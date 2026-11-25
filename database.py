@@ -55,6 +55,11 @@ def create_tables():
 
             UNIQUE (product_id, store_id)
         );
+
+        CREATE INDEX IF NOT EXISTS idx_products_name
+            ON Products(name);
+        CREATE INDEX IF NOT EXISTS idx_store_listings_product
+            ON StoreListings(product_id);
     """)
 
     connection.commit()

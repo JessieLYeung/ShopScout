@@ -1,65 +1,86 @@
-from stores_database import save_store, save_nearby_stores, get_all_stores
-from geolocation import get_coordinates
-from stores import find_nearby_stores
+import pytest
+
+import database
+import stores
+from stores import add_store_distances
+from stores_database import get_all_stores, save_nearby_stores, save_store
 
 
-def test_store_database():
-    store_id = save_store(
-        "Walmart",
-        "Orlando, FL",
-        28.5421,
-        -81.3790
-    )
+@pytest.fixture
+def temporary_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DATABASE_PATH", tmp_path / "shopscout.db")
+    database.create_tables()
 
-    print("Store ID:", store_id)
 
-    nearby_stores = [
+def test_store_records_are_persisted(temporary_database):
+    first_id = save_store("Publix", "123 Main St", 28.54, -81.38)
+    duplicate_id = save_store("Publix", "123 Main St", 28.54, -81.38)
+    store_ids = save_nearby_stores([
         {
-            "name": "Walmart",
-            "address": "123 Main St, Orlando, FL",
-            "latitude": 28.54,
-            "longitude": -81.37
+            "name": "ALDI",
+            "address": "456 Main St",
+            "latitude": 28.55,
+            "longitude": -81.37,
+        }
+    ])
+
+    assert first_id == duplicate_id
+    assert len(store_ids) == 1
+    assert len(get_all_stores()) == 2
+
+
+def test_nearby_stores_include_distance_and_are_sorted():
+    coordinates = {"lat": 28.54, "lon": -81.38}
+    stores = [
+        {
+            "name": "Far",
+            "address": "Far away",
+            "latitude": 29.0,
+            "longitude": -81.38,
         },
         {
-            "name": "Publix",
-            "address": "456 Orange Ave, Orlando, FL",
-            "latitude": 28.55,
-            "longitude": -81.38
-        }
+            "name": "Close",
+            "address": "Nearby",
+            "latitude": 28.541,
+            "longitude": -81.38,
+        },
     ]
 
-    store_ids = save_nearby_stores(nearby_stores)
-    print("Saved store IDs:", store_ids)
+    sorted_stores = add_store_distances(stores, coordinates)
 
-    stores = get_all_stores()
-
-    for store in stores:
-        print(dict(store))
+    assert [store["name"] for store in sorted_stores] == ["Close", "Far"]
+    assert sorted_stores[0]["distance_km"] == 0.1
+    assert sorted_stores[1]["distance_km"] > 50
 
 
-def test_nearby_retailers():
-    coordinates = get_coordinates("32801")
-    nearby_stores = find_nearby_stores(coordinates)
+def test_store_search_uses_requested_radius(monkeypatch):
+    request_params = {}
+    calls = []
 
-    supported_retailers = {
-        "publix": "Publix",
-        "aldi": "Aldi",
-        "sprouts farmers market": "Sprouts"
-    }
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
 
-    retailers = []
+        def json(self):
+            return {"features": []}
 
-    if nearby_stores:
-        for store in nearby_stores:
-            name = store["name"].lower()
-            retailer = supported_retailers.get(name)
+    def fake_get(url, params, timeout):
+        calls.append(params)
+        request_params.update(params)
+        return FakeResponse()
 
-            if retailer is not None and retailer not in retailers:
-                retailers.append(retailer)
+    monkeypatch.setattr(stores.requests, "get", fake_get)
 
-    print("Supported nearby retailers:", retailers)
+    result = stores.find_nearby_stores(
+        {"lat": 28.54, "lon": -81.38},
+        radius_meters=10000,
+    )
+    cached_result = stores.find_nearby_stores(
+        {"lat": 28.54, "lon": -81.38},
+        radius_meters=10000,
+    )
 
-
-if __name__ == "__main__":
-    test_store_database()
-    test_nearby_retailers()
+    assert result == []
+    assert cached_result == []
+    assert len(calls) == 1
+    assert request_params["filter"].endswith(",10000")

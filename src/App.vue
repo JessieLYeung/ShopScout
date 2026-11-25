@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 const product = ref('')
 const location = ref('')
+const radiusKm = ref('5')
 const loading = ref(false)
 const error = ref('')
 const stores = ref(null)
@@ -21,6 +22,46 @@ const products = computed(() =>
     ? productTypes.flatMap(({ key }) => productGroups.value[key])
     : [],
 )
+
+const comparisonGroups = computed(() => {
+  if (!productGroups.value) return []
+
+  return productTypes.flatMap(({ key, label, unit }) => {
+    const groups = new Map()
+
+    for (const item of productGroups.value[key]) {
+      const comparisonKey = item.comparison_key || item.name.toLowerCase()
+      if (!groups.has(comparisonKey)) {
+        groups.set(comparisonKey, {
+          label: item.comparison_group || item.name,
+          unit,
+          items: [],
+        })
+      }
+      groups.get(comparisonKey).items.push(item)
+    }
+
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      label: `${group.label} · ${label.toLowerCase()}`,
+    }))
+  })
+})
+
+function formatUpdatedAt(value) {
+  if (!value) return 'Update time unavailable'
+
+  const timestamp = String(value).includes('T')
+    ? value
+    : `${String(value).replace(' ', 'T')}Z`
+  const date = new Date(timestamp)
+  return Number.isNaN(date.getTime())
+    ? 'Update time unavailable'
+    : `Updated ${date.toLocaleString([], {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })}`
+}
 
 async function searchStores() {
   const requestedProduct = product.value.trim()
@@ -42,6 +83,7 @@ async function searchStores() {
     const query = new URLSearchParams({
       zip: requestedLocation,
       product: requestedProduct,
+      radius_km: radiusKm.value,
     })
     const response = await fetch(`/search?${query}`)
     let data
@@ -207,6 +249,17 @@ async function searchStores() {
             </span>
           </label>
 
+          <span class="panel-divider radius-divider" aria-hidden="true"></span>
+
+          <label class="form-field radius-field">
+            <span class="field-label">Search radius</span>
+            <select v-model="radiusKm" name="radius">
+              <option value="5">5 km</option>
+              <option value="10">10 km</option>
+              <option value="25">25 km</option>
+            </select>
+          </label>
+
           <button class="search-button" type="submit" :disabled="loading">
             <svg
               v-if="!loading"
@@ -233,7 +286,7 @@ async function searchStores() {
         </form>
 
         <p class="search-note">
-          Price comparisons are available for supported nearby retailers.
+          Compare supported retailers within your selected radius.
         </p>
       </section>
 
@@ -275,25 +328,52 @@ async function searchStores() {
             </div>
 
             <div
-              v-for="type in productTypes"
-              v-show="productGroups[type.key].length"
-              :key="type.key"
+              v-for="(group, groupIndex) in comparisonGroups"
+              :key="`${group.label}-${groupIndex}`"
               class="product-group"
             >
-              <h3>{{ type.label }} comparison</h3>
+              <h3>{{ group.label }} comparison</h3>
               <ul class="product-list">
                 <li
-                  v-for="(item, index) in productGroups[type.key]"
-                  :key="`${item.retailer}-${item.name}-${item.size}-${index}`"
+                  v-for="(item, index) in group.items"
+                  :key="`${item.store_name}-${item.name}-${item.size}-${index}`"
                   class="product-card"
                 >
                   <div class="product-details">
                     <h4>{{ item.name }}</h4>
                     <p>{{ item.retailer }} · {{ item.size }}</p>
+                    <p v-if="item.store_name" class="product-store">
+                      {{ item.store_name }}
+                      <span v-if="item.store_distance_km !== null && item.store_distance_km !== undefined">
+                        · {{ item.store_distance_km.toFixed(1) }} km away
+                      </span>
+                    </p>
+                    <p v-if="item.store_address" class="product-address">
+                      {{ item.store_address }}
+                    </p>
+                    <p class="product-availability">
+                      {{
+                        item.availability === 'available'
+                          ? 'Available'
+                          : item.availability === 'out_of_stock'
+                            ? 'Out of stock'
+                            : 'Availability unknown'
+                      }}
+                      · {{ formatUpdatedAt(item.last_updated) }}
+                    </p>
+                    <a
+                      v-if="item.product_url"
+                      class="product-link"
+                      :href="item.product_url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View product
+                    </a>
                   </div>
                   <div class="product-prices">
                     <strong>${{ item.price.toFixed(2) }}</strong>
-                    <span>${{ item.unit_price.toFixed(4) }} / {{ type.unit }}</span>
+                    <span>${{ item.unit_price.toFixed(4) }} / {{ group.unit }}</span>
                   </div>
                 </li>
               </ul>
@@ -319,7 +399,12 @@ async function searchStores() {
                 <span class="store-number">{{ String(index + 1).padStart(2, '0') }}</span>
                 <div class="store-details">
                   <h3>{{ store.name }}</h3>
-                  <p>{{ store.address }}</p>
+                  <p>
+                    {{ store.address }}
+                    <span v-if="store.distance_km !== undefined">
+                      · {{ store.distance_km.toFixed(1) }} km away
+                    </span>
+                  </p>
                 </div>
                 <a
                   class="directions-link"
